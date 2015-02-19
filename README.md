@@ -16,7 +16,7 @@ Using CoSREM:
    
    Required files are:
 	  
-	  hexmer-Ei-Order.txt : contains all possible 6-mers with their corresponding scores and ranks.
+	  hexmer-Ei-Order.csv : contains all possible 6-mers with their corresponding scores and ranks.
 	  
 	  exons+introns+new.csv : contains all unique coding exons for known human gene with thier flanking intronic regions.
 	  
