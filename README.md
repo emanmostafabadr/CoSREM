@@ -1,6 +1,7 @@
 # CoSREM
 
 What is CoSREM?
+
 CoSREM (Combinatorial SRE Miner) is a graph mining algorithm 
 to discover combinatorial SREs in human exons. 
 
