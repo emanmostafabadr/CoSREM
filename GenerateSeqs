@@ -1,0 +1,552 @@
+Created on Oct 14, 2014
+
+@author: ebadr
+'''
+import sys
+#import math
+import networkx as nx
+#import matplotlib
+#import numpy as np
+#import operator
+#from operator import itemgetter
+
+#try:
+#    import matplotlib.pyplot as plt
+#except:
+#    raise
+sys.setrecursionlimit(10000)
+
+def Readseqs(GraphW):
+    fh = None
+    #ESE1
+    try:
+        #fh = open(GraphW+'MCSsets100.txt', encoding="utf8")
+        fh = open(GraphW+'MCSsets.txt', encoding="utf8")
+        MsetGraphs={}
+        MsetExons={}
+        for lino, line in enumerate(fh, start=1):
+            line = line.rstrip()
+            if not line:
+                continue
+            else:
+                Fields = line.split("|")
+                L=[]
+                L = Fields[1].split(",")
+                A = [x for x in L if x != '']
+                L2=[int(i) for i in A]
+                MsetGraphs[int(Fields[0])]= L2
+                L=[]
+                L = Fields[2].split(",")
+                A = [x for x in L if x != '']
+                L2=[int(i) for i in A]
+                MsetExons[int(Fields[0])]= L2        
+        return MsetGraphs,MsetExons
+    finally:
+            if fh is not None:
+                fh.close()
+                
+#######################################################
+def ReadData(GraphW):
+    MH={}
+    #ESE1
+    #for i in range(1,798): #alpha = 1000
+    for i in range(1,265): #alpha = 1000
+    #for i in range(1,612):  #alpha = 500
+        c = GraphW+str(i)+'.gml'
+        w = nx.read_gml(c,relabel=True)
+        MH[i]= w
+    
+    #ESE2
+    #for i in range(176,339):
+        #c = GraphW1+str(i)+'.gml'
+        #w = nx.read_gml(c,relabel=True)
+        #MH[i] = w
+    
+    #ESS1
+    #for i in range(339,428):
+    #    c = GraphW1+str(i)+'.gml'
+    #    w = nx.read_gml(c,relabel=True)
+    #    MH[i] = w
+    return MH
+#######################################################
+def Read_Input_Data(FileName):
+    fh = None
+    try:
+        fh = open(FileName, encoding="utf8")
+        SREs=[]
+        for lino, line in enumerate(fh, start=1):
+            line = line.rstrip()
+            if not line:
+                continue
+            else:
+                SREs.append(line)
+        return SREs
+    finally:
+            if fh is not None:
+                fh.close()
+#######################################################
+#DFS but only for finding important nodes
+def MyDFS(G,source):
+    # produce edges for components with source
+    n=1 ##
+    seqs=list()
+    nodes=[source]
+    sequence=source
+   # print(sequence)
+    visited=set()
+    for start in nodes:
+        if start in visited:
+            continue
+        visited.add(start)
+        stack = [(start,iter(G[start]))]
+        while stack:
+            parent,children = stack[-1]
+            try:
+                child = next(children)
+        #        print(child)
+                if child not in visited:
+                    visited.add(child)
+                    n+=1 ##
+                    sequence+=child[-1:]
+                    stack.append((child,iter(G[child])))
+            except StopIteration:
+                seqs.append(sequence)
+                stack.pop()
+                sequence=sequence[:-1]
+    return seqs            
+#######################################################
+
+def Duplicate(Seqs):
+    FSeqs=[]
+    for i in range(0,len(Seqs)):
+        flag = False
+        for j in range(0,len(Seqs)):
+            if(i != j):
+                if(Seqs[i] in Seqs[j]):
+                    flag=True
+        if(not flag):
+            FSeqs.append(Seqs[i])        
+    return FSeqs
+#######################################################
+def DFS(MH,MsetGraphs, MsetExons ):
+    RL1={} #ResultsLevel1
+    for i in range(1,len(MsetGraphs)+1):
+        L=list(MsetGraphs[i]) # list of graph IDs
+        K= list(MsetExons[i])
+        #print('-->',i,'|' ,len(K))
+        for j in L:
+            #print(j)
+            G = MH[j]
+            Seqs=list()
+            #S= G.in_degree(G.nodes())
+            #print(S)
+            for node in G:
+                seqs=MyDFS(G,node)
+                Seqs.extend(seqs)
+            Fseq = Duplicate(Seqs) 
+            RL1[j]=Fseq
+            #print(j,':',Fseq)
+    return RL1
+
+##################################################################
+def Check_Intersection(sre1,sre2,exon):
+    s1 = exon.find(sre1)
+    s2 = exon.find(sre2)
+    e1=s1+len(sre1)-1
+    e2=s2+len(sre2)-1
+    if (s1 >= s2) and (s1 <= e2):
+        return True
+    elif (s2 >= s1) and (s2 <= e1):
+        return True
+    return False                 
+#######################################################
+def GetSeqs(SREs,exon):
+    start=[]
+    S={}
+    for lis in SREs:
+        for sre in lis:
+            s1 = exon.find(sre)
+            if(s1 > -1):
+                if s1 in S:
+                    tmp = S[s1]
+                    if len(sre) > len(tmp):
+                        S[s1]=sre
+                else:
+                    start.append(s1)
+                    S[s1]=sre
+                    break
+    start.sort()
+    i = 0
+    while i < (len(start)-1):
+    #for i in range(len(start)-1):
+        sre1 = S[start[i]]
+        sre2 = S[start[i+1]]
+        flag = Check_Intersection(sre1,sre2,exon)
+        if(flag):
+            diff = start[i+1]-start[i]
+            nsre = sre1+sre2[len(sre1)-diff:]
+            S[start[i]] = nsre
+            del S[start[i+1]]
+            del start[i+1]
+            i-=1
+        i+=1
+    G = list(S.values())
+    G.sort() 
+    return  G
+#######################################################
+def Find_Overlap(SREs,Attr,Exons1,theta):
+    ex = [] #exons for one sequence
+    allexons = [] #exons for all sequences
+    potential=[]
+    no_pot=[]
+    for e in Attr:
+        exon=Exons1[e]
+        nSREs = GetSeqs(SREs,exon)
+        if len(nSREs) > 1:
+        #if len(nSREs) > 0: #just to get ovelapped
+            if(nSREs in potential):
+                index = potential.index(nSREs)
+                no_pot[index]= no_pot[index]+1
+                ex= allexons[index]
+                ex.append(e)
+                allexons[index]=ex   
+            else:
+                potential.append(nSREs)
+                no_pot.append(1)
+                ex = []
+                ex.append(e)
+                allexons.append(ex)
+ 
+    i= 0
+    while i < len(potential):
+        #print(potential[i],no_pot[i])
+        if (no_pot[i] < theta):
+        #if (no_pot[i] < 0):
+            del no_pot[i]
+            del potential[i]
+            del allexons[i]
+            i-=1
+        i+=1
+             
+    return potential, no_pot, allexons             
+##################################################################
+def Find_OverlapES(E,S,Attr,Exons1,theta):
+    ex = [] #exons for one sequence
+    allexons = [] #exons for all sequences
+    potential=[]
+    no_pot=[]
+    #print(len(Attr))
+    for e in Attr:
+        nSREs=[]
+        exon=Exons1[e]
+        nSREs = GetSeqs(E,exon)
+        nSs = GetSeqs(S,exon)
+        nSREs.extend(nSs)
+        
+        if len(nSREs) > 1:
+            if(nSREs in potential):
+                index = potential.index(nSREs)
+                no_pot[index]= no_pot[index]+1
+                ex= allexons[index]
+                ex.append(e)
+                allexons[index]=ex   
+            else:
+                potential.append(nSREs)
+                no_pot.append(1)
+                ex = []
+                ex.append(e)
+                allexons.append(ex)
+
+    i= 0
+    while i < len(potential):
+        #print(potential[i],no_pot[i])
+        if (no_pot[i] < theta):
+            del no_pot[i]
+            del potential[i]
+            del allexons[i]
+            i-=1
+        i+=1
+             
+    return potential, no_pot, allexons             
+
+##################################################################
+def Find_OverlapESmultiple(T1,T2,T22, Attr,Exons1,Exons2,theta):
+    potential=[]
+    no_pot=[]
+    for e in Attr:
+        nSREs=[]
+        exon=Exons1[e]
+        nSREs = GetSeqs(T1,exon)
+
+        exon=Exons2[e]
+        nSs = GetSeqs(T2,exon)
+        nSREs.extend(nSs)
+        nSs = GetSeqs(T22,exon)
+        nSREs.extend(nSs)
+
+        if len(nSREs) > 1:
+            if(nSREs in potential):
+                index = potential.index(nSREs)
+                no_pot[index]= no_pot[index]+1   
+            else:
+                potential.append(nSREs)
+                no_pot.append(1)
+    i= 0
+    while i < len(potential):
+        #print(potential[i],no_pot[i])
+        if (no_pot[i] < theta):
+            del no_pot[i]
+            del potential[i]
+            i-=1
+        i+=1
+             
+    return potential, no_pot             
+
+##################################################################
+def Find_OverlapESall(E1,S1,E2,S2, Attr,Exons1,Exons2,theta):
+    potential=[]
+    no_pot=[]
+    for e in Attr:
+        nSREs=[]
+        exon=Exons1[e]
+        nSREs = GetSeqs(E1,exon)
+        nSs = GetSeqs(S1,exon)
+        nSREs.extend(nSs)
+        
+        exon=Exons2[e]
+        nSs = GetSeqs(E2,exon)
+        nSREs.extend(nSs)
+        nSs = GetSeqs(S2,exon)
+        nSREs.extend(nSs)
+
+        if len(nSREs) > 1:
+            if(nSREs in potential):
+                index = potential.index(nSREs)
+                no_pot[index]= no_pot[index]+1   
+            else:
+                potential.append(nSREs)
+                no_pot.append(1)
+    i= 0
+    while i < len(potential):
+        #print(potential[i],no_pot[i])
+        if (no_pot[i] < theta):
+            del no_pot[i]
+            del potential[i]
+            i-=1
+        i+=1
+             
+    return potential, no_pot             
+
+##################################################################
+def Find_Overlapdifferent(T1,T2, Attr,Exons1,Exons2,theta):
+    potential=[]
+    no_pot=[]
+    for e in Attr:
+        nSREs=[]
+        exon=Exons1[e]
+        nSREs = GetSeqs(T1,exon)
+        
+        exon=Exons2[e]
+        nSs = GetSeqs(T2,exon)
+        nSREs.extend(nSs)
+        
+        if len(nSREs) > 1:
+            if(nSREs in potential):
+                index = potential.index(nSREs)
+                no_pot[index]= no_pot[index]+1   
+            else:
+                potential.append(nSREs)
+                no_pot.append(1)
+    i= 0
+    while i < len(potential):
+        #print(potential[i],no_pot[i])
+        if (no_pot[i] < theta):
+            del no_pot[i]
+            del potential[i]
+            i-=1
+        i+=1
+             
+    return potential, no_pot             
+
+##################################################################
+
+def Filter(Exons1,MsetGraphs,MsetExons, RL1,theta,ESEID):
+    Seq=[]
+    attr=[]
+    for i in range(1,len(MsetGraphs)+1):
+        E=[]
+        S=[]
+        L = list(MsetGraphs[i])
+        Attr = MsetExons[i]
+        d=''
+        for j in L:
+            G = RL1[j]
+            #print('$$$',G)
+            if(j < ESEID): #alpha = 1000
+            #if(j < 176): #alpha = 1000
+            #if(j < 343): #alpha = 500
+            #if(j<401): #random sequences 1000-100
+                d=d+'E'
+                E.append(G)
+            else:
+                d=d+'S'
+                S.append(G)
+        if (len(E)==0):
+            potential, no_pot,Ex = Find_Overlap(S, Attr,Exons1,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Silencer', potential[i], no_pot[i])
+                Seq.extend(potential)
+                attr.extend(Ex)
+        elif (len(S)==0):
+            potential, no_pot, Ex = Find_Overlap(E, Attr,Exons1,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Enhancer', potential[i], no_pot[i])
+                Seq.extend(potential)
+                attr.extend(Ex)
+        else:
+            potential, no_pot, Ex = Find_OverlapES(E,S, Attr,Exons1,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Enhancer+Silencer', potential[i], no_pot[i])
+                Seq.extend(potential)
+                attr.extend(Ex)
+    return Seq, attr
+
+#######################################################
+def Filter1(Exons1,Exons2,MsetGraphs,MsetExons, RL1,theta):
+    for i in range(1,len(MsetGraphs)+1):
+        E1=[]
+        E2=[]
+        S1=[]
+        S2=[]
+        L = list(MsetGraphs[i])
+        Attr = MsetExons[i]
+        d=''
+        for j in L:
+            G = RL1[j]
+            if(j < 176): #alpha = 1000
+                d=d+'E1'
+                E1.append(G)
+            elif(j < 265):
+                d=d+'S1'
+                S1.append(G)
+            elif(j < 428):
+                d=d+'E2'
+                E2.append(G)
+            else:
+                d=d+'S2'
+                S2.append(G)
+        #print(i,':',d)
+        if ((len(E2)==0) and (len(S1)==0) and (len(S2)==0)):
+            potential, no_pot = Find_Overlap(E1, Attr,Exons1,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Enhancer1', potential[i], no_pot[i])
+        elif ((len(E1)==0) and (len(S1)==0) and (len(S2)==0)):
+            potential, no_pot = Find_Overlap(E2, Attr,Exons2,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Enhancer2', potential[i], no_pot[i])
+        elif ((len(E2)==0) and (len(E1)==0) and (len(S2)==0)):
+            potential, no_pot = Find_Overlap(S1, Attr,Exons1,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Silencer1', potential[i], no_pot[i])
+        elif ((len(E2)==0) and (len(S1)==0) and (len(E1)==0)):
+            potential, no_pot = Find_Overlap(S2, Attr,Exons2,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Silencer2', potential[i], no_pot[i])
+        elif ((len(E2)==0) and (len(S2)==0)):
+            potential, no_pot = Find_OverlapES(E1,S1, Attr,Exons1,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Enhancer1+Silencer1', potential[i], no_pot[i])
+        elif ((len(E1)==0) and (len(S1)==0)):
+            potential, no_pot = Find_OverlapES(E2,S2, Attr,Exons2,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Enhancer2+Silencer2', potential[i], no_pot[i])
+        elif ((len(S1)==0) and (len(S2)==0)):
+            potential, no_pot = Find_Overlapdifferent(E1,E2, Attr,Exons1,Exons2,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Enhancer1+Enhamcer2', potential[i], no_pot[i])
+        elif ((len(E1)==0) and (len(E2)==0)):
+            potential, no_pot = Find_Overlapdifferent(S1,S2, Attr,Exons1,Exons2,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Silencer1+Silencer2', potential[i], no_pot[i])
+        elif ((len(E2)==0) and (len(S1)==0)):
+            potential, no_pot = Find_Overlapdifferent(E1,S2, Attr,Exons1,Exons2,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Enhancer1+Silencer2', potential[i], no_pot[i])
+        elif ((len(E1)==0) and (len(S2)==0)):
+            potential, no_pot = Find_Overlapdifferent(S1,E2, Attr,Exons1,Exons2,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Silencer1+Enhancer2', potential[i], no_pot[i])
+        elif (len(E1)==0):
+            potential, no_pot = Find_OverlapESmultiple(S1,E2,S2, Attr,Exons1,Exons2,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Silencer1+Enhancer2+Silencer2', potential[i], no_pot[i])
+        elif (len(S1)==0):
+            potential, no_pot = Find_OverlapESmultiple(E1,E2,S2, Attr,Exons1,Exons2,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Enhancer1+Enhancer2+Silencer2', potential[i], no_pot[i])
+        elif (len(E2)==0):
+            potential, no_pot = Find_OverlapESmultiple(S2,E1,S1, Attr,Exons2,Exons1,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Silencer2+Enhancer1+Silencer1', potential[i], no_pot[i])
+        elif (len(S2)==0):
+            potential, no_pot = Find_OverlapESmultiple(E2,E1,S1, Attr,Exons2,Exons1,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Enhancer2+Enhancer1+Silencer1', potential[i], no_pot[i])
+        else:
+            potential, no_pot = Find_OverlapESall(E1,S1,E2,S2, Attr,Exons1,Exons2,theta)
+            if(len(potential) > 0):
+                for i in range(len(potential)):
+                    print('Enhancer1+Silencer1+Enhancer2+Silencer2', potential[i], no_pot[i])
+    return
+##################################################333
+def Write_output(F,Seq, attr):
+    fh = open(F+'MCSs/FinalSREs.txt', "w", encoding="utf8")
+    # write MCSset ID | subgraph IDs | Exons IDs 
+    for i in range(0,len(Seq)):
+        fh.write(str(i+1))
+        fh.write('|')
+        L = list(Seq[i])
+        M = list(attr[i])
+        for k in L:
+            fh.write(str(k))
+            fh.write(',')
+        fh.write('|')
+        for k in M:
+            fh.write(str(k))
+            fh.write(',')
+        fh.write("\n")
+    return
+##################################################333
+def main(MH,MsetGraphs, MsetExons,theta, ESEID, GraphW):
+
+    #GraphW="/home/ebadr/Writing/py3eg/WCCs/1000-100/wcc"
+    Exons = GraphW+"Exons1.txt"
+    
+    #Read Exons
+    Exons1= Read_Input_Data(Exons)
+    
+    # Generate SREs
+    RL1 = DFS(MH,MsetGraphs, MsetExons )
+    #Work on processing these resulted Msets
+    Seq, attr = Filter(Exons1,MsetGraphs,MsetExons,RL1,theta,ESEID)
+    #Filter1(Exons1,Exons2,MsetGraphs,MsetExons,RL1)
+    Write_output(GraphW, Seq, attr)
+    return Seq, attr
+
