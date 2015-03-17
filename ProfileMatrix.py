@@ -173,7 +173,9 @@ def PrMt(R,GraphW,flag):
 #Variables
     length=50 #nucleotides
     SREs=[]
-
+    filelist= [f for f in os.listdir(GraphW+'MCSs') if f.endswith(".gml")]
+    for f in filelist:
+        os.remove(GraphW+'MCSs/'+f)
     FileName= GraphW +"hexmer-Ei-Order.csv"
     File= GraphW +"exons+introns+new.csv" #tissue
     #File = GraphW +"Testis.csv"
